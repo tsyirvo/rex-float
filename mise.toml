@@ -1,0 +1,17 @@
+[tools]
+gitleaks = "8.30.1"
+hk = "2.10.0"
+lua = "5.1.5"
+shellcheck = "0.11.0"
+
+[tasks.test]
+description = "Run the Lua tests"
+run = ["lua tests/config_test.lua", "lua tests/init_test.lua"]
+
+[tasks.lint]
+description = "Check run.sh with shellcheck and with the bash macOS ships"
+run = ["shellcheck run.sh", "/bin/bash -n run.sh"]
+
+[tasks.check]
+description = "Lint and test"
+depends = ["lint", "test"]
