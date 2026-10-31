@@ -24,7 +24,7 @@ local C = require((... or "floats") .. ".config")
 local M = {}
 
 -- Set by release-please on each release.
-M.version = "0.0.0" -- x-release-please-version
+M.version = "0.1.0" -- x-release-please-version
 
 local SHELL    = "com.superlogical.terminal.shell"
 local TERMINAL = "com.superlogical.terminal"
