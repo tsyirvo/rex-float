@@ -14,6 +14,11 @@
 --   error can be read. When run.sh exits the terminal closes, and the layer
 --   with it.
 --
+--   The action runs on this machine, but the focused pane may be on a remote
+--   host. rex.exec and io only see this machine, so anything about the pane's
+--   machine goes through the pane: the repository is found with its list_dir
+--   method, and the float gets run.sh's text rather than a path.
+--
 --   A session shows one float at a time. The float's own key closes it, and
 --   another float's key replaces it. A key press finds the open float in
 --   session.view by its block's label, so nothing is kept between presses and
@@ -41,9 +46,8 @@ M.options = {
 -- the rest of init.lua, and a log line goes unseen, so the actions report it.
 local config_error
 
--- The sessions where a key press is running. A press waits on Rex calls and
--- on git, and Rex handles other keys meanwhile, so a second press could open
--- a second float.
+-- The sessions where a key press is running. A press waits on Rex calls, and
+-- Rex handles other keys meanwhile, so a second press could open a second float.
 local busy = {}
 
 local function fail(message)
@@ -55,24 +59,20 @@ local function check(result, err)
   return result
 end
 
-local function trim(s)
-  return (s:gsub("^%s+", ""):gsub("%s+$", ""))
-end
-
--- run.sh, beside this file. Found once, at load. nil and the reason when it
--- isn't there.
-local function find_runner()
+-- The text of run.sh, beside this file. Read once, at load. nil and the reason
+-- when it isn't there.
+local function read_runner()
   local src = (debug.getinfo(1, "S").source or ""):gsub("^@", "")
   local dir = src:match("^(/.*)/[^/]*$")
   if dir == nil then return nil, "can't tell where Floats is installed, from " .. src end
-  local path = dir .. "/run.sh"
-  local file = io.open(path, "r")
+  local file = io.open(dir .. "/run.sh", "r")
   if file == nil then return nil, "run.sh is missing from " .. dir end
+  local script = file:read("*a")
   file:close()
-  return path
+  return script
 end
 
-local runner, runner_error = find_runner()
+local runner, runner_error = read_runner()
 
 -- The directory a terminal is in: its foreground program's, else its shell's,
 -- else what it last reported. nil rather than a guess.
@@ -86,9 +86,21 @@ local function cwd_of(block_id)
   return pwd and C.path_of(pwd.pwd)
 end
 
-local function git_root(dir)
-  local r = rex.exec({ "git", "-C", dir, "rev-parse", "--show-toplevel" }, { timeout = 5 })
-  if r and r.ok then return trim(r.stdout) end
+-- The nearest directory from dir upward with a .git entry, on the machine the
+-- block runs on. nil when there is none. A directory it can't read counts as
+-- having none, so the search carries on upward.
+local function git_root(block_id, dir)
+  local start = dir
+  while dir do
+    local listing, err = rex.block.call(TERMINAL, "list_dir", {
+      block_id = block_id, path = dir, prefix = ".git", files = true,
+    })
+    if listing == nil then
+      fail("can't look for a git repository from " .. start .. ": " .. tostring(err))
+    end
+    if C.has_git(listing) then return dir end
+    dir = C.parent_of(dir)
+  end
   return nil
 end
 
@@ -106,7 +118,7 @@ local function toggle(ctx, f)
     cwd = block_id and cwd_of(block_id)
     if cwd == nil then fail("can't tell which directory the focused pane is in") end
     if f.cwd == "git" then
-      local root = git_root(cwd)
+      local root = git_root(block_id, cwd)
       if root == nil then fail("not a git repository: " .. cwd) end
       cwd = root
     end
