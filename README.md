@@ -9,7 +9,9 @@ Open a command in a floating terminal over your [Rex](https://www.superlogical.c
 
 ## Install
 
-Requires the Rex Mac app, git and bash (the macOS bash 3.2 works). The commands your floats run must be on your shell's `PATH`.
+Requires the Rex Mac app. The machine a pane runs on needs bash (the macOS bash 3.2 works), and the commands your floats run must be on its shell's `PATH`.
+
+Install Floats on the Mac only. Its floats also work in sessions on remote hosts, which need no copy of it.
 
 ```sh
 git clone https://github.com/tsyirvo/rex-floats ~/.config/rex/floats
@@ -60,13 +62,15 @@ floats: fix the setup in init.lua: floats[2].cwd: expected "pane" or "git", got 
 
 ```
 key press → floats_<name>
-  init.lua resolves the focused pane's directory (or its repo root)
-  rex.session.new_layer opens a floating terminal there, running run.sh
+  init.lua asks the focused pane for its directory (or its repo root)
+  rex.session.new_layer opens a floating terminal there, running run.sh's text
     run.sh runs the command, and on failure waits for a key
   run.sh exits → the terminal closes → the layer closes
 ```
 
 Floats keeps no state: it finds the open float by its block label, `floats:<name>`, so a float opened before `rex config reload` or a server restart still closes with its key. Each session shows at most one float, in the tab where it opened. From the CLI, `rex do floats_<name>` acts on the active tab's focused pane.
+
+Actions run on the Mac, even when the pane is on a remote host, and `rex.exec` can only start programs on the Mac. So Floats looks for the repository through the pane, walking up from its directory to the nearest `.git`, and doesn't run git itself.
 
 ## Develop
 

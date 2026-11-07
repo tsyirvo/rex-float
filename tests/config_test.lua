@@ -106,19 +106,19 @@ end)
 -- terminal
 
 test("a string command runs with sh -c through run.sh", function()
-  local o = C.terminal({ name = "diff", command = "tuicr -w" }, "/repo", "/f/run.sh")
+  local o = C.terminal({ name = "diff", command = "tuicr -w" }, "/repo", "SCRIPT")
   eq(o.cwd, "/repo")
-  eq(table.concat(o.command, "|"), "bash|/f/run.sh|error|diff|sh|-c|tuicr -w")
+  eq(table.concat(o.command, "|"), "bash|-c|SCRIPT|floats|error|diff|sh|-c|tuicr -w")
   eq(o.exit.quick_exit_threshold_ms, 0, "run.sh, not Rex, holds the float")
 end)
 
 test("a list command keeps its arguments, and hold is passed", function()
-  local o = C.terminal({ name = "lg", command = { "lazygit", "-p", "a b" }, hold = "always" }, "/r", "/f/run.sh")
-  eq(table.concat(o.command, "|"), "bash|/f/run.sh|always|lg|lazygit|-p|a b")
+  local o = C.terminal({ name = "lg", command = { "lazygit", "-p", "a b" }, hold = "always" }, "/r", "SCRIPT")
+  eq(table.concat(o.command, "|"), "bash|-c|SCRIPT|floats|always|lg|lazygit|-p|a b")
 end)
 
 test("no command gives a plain shell", function()
-  local o = C.terminal({ name = "sh" }, "/r", "/f/run.sh")
+  local o = C.terminal({ name = "sh" }, "/r", "SCRIPT")
   eq(o.command, nil)
   eq(o.exit, nil)
   eq(o.cwd, "/r")
@@ -190,6 +190,25 @@ test("path_of turns an OSC 7 URL into a path", function()
   eq(C.path_of(nil), nil)
 end)
 
+-- parent_of
+
+test("parent_of climbs one directory and stops at the root", function()
+  eq(C.parent_of("/repo/sub"), "/repo")
+  eq(C.parent_of("/repo"), "/")
+  eq(C.parent_of("/repo/sub/"), "/repo")
+  eq(C.parent_of("/"), nil)
+end)
+
+-- has_git
+
+test("has_git wants an entry named exactly .git, a directory or a file", function()
+  eq(C.has_git({ entries = { { name = ".git" } } }), true)
+  eq(C.has_git({ entries = { { name = ".git", file = true } } }), true)
+  eq(C.has_git({ entries = { { name = ".github" }, { name = ".gitignore", file = true } } }), false)
+  eq(C.has_git({ entries = {} }), false)
+  eq(C.has_git({}), false)
+end)
+
 -- run.sh. A key is piped in for the cases that wait for one.
 
 local function run(args)
@@ -209,6 +228,13 @@ end)
 
 test("run.sh without a command is a usage error", function()
   eq(run("error t"), 2)
+end)
+
+-- How a float starts it: its text given to bash -c, as on a remote host.
+test("run.sh's text works through bash -c", function()
+  local cmd = "echo x | bash -c \"$(cat run.sh)\" floats error t sh -c 'exit 3' >/dev/null 2>&1"
+  local status = os.execute(cmd)
+  eq(status > 255 and status / 256 or status, 3)
 end)
 
 print(("%d passed, %d failed"):format(passed, failed))

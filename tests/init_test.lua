@@ -34,7 +34,9 @@ local function has(text, part)
 end
 
 -- The fake Rex. Each window has a tiled layer with one shell in it. The fake
--- terminal's directories and git roots come from the tables below.
+-- terminal's directories and repositories come from the tables below. The
+-- panes may be on another machine, so rex.exec, which runs on this one, fails
+-- the test.
 local state
 
 local function fresh()
@@ -47,8 +49,9 @@ local function fresh()
     },
     cwd = { pane1 = "/repo/sub", pane2 = "/other" },
     pwd = {},
-    git = { ["/repo/sub"] = "/repo" },
-    on_exec = nil,
+    git = { ["/repo"] = true },
+    on_list_dir = nil,
+    list_dir_error = nil,
   }
 
   rex = {
@@ -56,16 +59,22 @@ local function fresh()
     bind = function(key, action) state.binds[key] = action end,
     log = function(level, message) state.logs[#state.logs + 1] = level .. ": " .. message end,
     exec = function(argv)
-      if state.on_exec then state.on_exec() end
-      local root = state.git[argv[3]]
-      if root then return { ok = true, stdout = root .. "\n" } end
-      return { ok = false, stdout = "" }
+      error("rex.exec runs on this machine, not the pane's: " .. table.concat(argv, " "), 0)
     end,
     block = {
       call = function(_, method, args)
         if method == "process" then
           local cwd = state.cwd[args.block_id]
           return cwd and { child = { cwd = cwd } } or {}
+        end
+        if method == "list_dir" then
+          if state.on_list_dir then state.on_list_dir() end
+          if state.list_dir_error then return nil, state.list_dir_error end
+          -- The prefix also matches these, as Rex's does.
+          local entries = { { name = ".github" }, { name = ".gitignore", file = true } }
+          local git = state.git[args.path]
+          if git then entries[#entries + 1] = { name = ".git", file = git == "file" or nil } end
+          return { path = args.path, status = "ok", entries = entries, truncated = false }
         end
         return { pwd = state.pwd[args.block_id] }
       end,
@@ -150,7 +159,7 @@ test("a float in another window moves to the active one", function()
   fresh().setup{ floats = FLOATS }
   assert(press("diff"))
   state.active = "w2"
-  state.git["/other"] = "/other"
+  state.git["/other"] = true
   assert(press("diff", { session_id = "s1", block_id = "pane2" }))
   eq(shown(), "w2/floats:diff@/other")
 end)
@@ -167,8 +176,8 @@ end)
 test("a second press while one runs is dropped", function()
   fresh().setup{ floats = FLOATS }
   local inner
-  state.on_exec = function()
-    state.on_exec = nil
+  state.on_list_dir = function()
+    state.on_list_dir = nil
     inner = { press("diff") }
   end
   assert(press("diff"))
@@ -182,9 +191,59 @@ test("a failed press doesn't block the next one", function()
   local ok, err = press("diff")
   eq(ok, false)
   has(err, "floats: not a git repository: /repo/sub")
-  state.git = { ["/repo/sub"] = "/repo" }
+  state.git = { ["/repo"] = true }
   assert(press("diff"))
   eq(shown(), "w1/floats:diff@/repo")
+end)
+
+test("the repository is found through the pane, at its own level", function()
+  fresh().setup{ floats = FLOATS }
+  state.cwd.pane1 = "/repo"
+  assert(press("diff"))
+  eq(shown(), "w1/floats:diff@/repo")
+end)
+
+test("the nearest repository wins", function()
+  fresh().setup{ floats = FLOATS }
+  state.git["/repo/sub"] = true
+  assert(press("diff"))
+  eq(shown(), "w1/floats:diff@/repo/sub")
+end)
+
+test("a .git file, as in a worktree, marks a repository", function()
+  fresh().setup{ floats = FLOATS }
+  state.git = { ["/repo"] = "file" }
+  assert(press("diff"))
+  eq(shown(), "w1/floats:diff@/repo")
+end)
+
+test("a repository at the filesystem's root is found", function()
+  fresh().setup{ floats = FLOATS }
+  state.git = { ["/"] = true }
+  assert(press("diff"))
+  eq(shown(), "w1/floats:diff@/")
+end)
+
+test("a pane the directories can't be read through isn't called outside a repository", function()
+  fresh().setup{ floats = FLOATS }
+  state.list_dir_error = "not_found"
+  local ok, err = press("diff")
+  eq(ok, false)
+  has(err, "floats: can't look for a git repository from /repo/sub: not_found")
+  eq(shown(), "")
+end)
+
+test("a float starts from run.sh's text, so the pane's machine needs no copy", function()
+  fresh().setup{ floats = FLOATS }
+  assert(press("diff"))
+  local command = state.windows[1].layers[2].options.command
+  eq(command[1], "bash")
+  eq(command[2], "-c")
+  local file = assert(io.open("run.sh"))
+  local script = file:read("*a")
+  file:close()
+  eq(command[3], script)
+  eq(table.concat(command, "|", 4), "floats|error|diff|sh|-c|tuicr")
 end)
 
 test("with no block, the active window's focused pane is used", function()

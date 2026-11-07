@@ -117,17 +117,17 @@ function M.check(opts)
   end
 end
 
--- The terminal options for a float that starts in cwd. runner is run.sh's
--- path. A string command runs with sh -c, a list as it is, each through
--- run.sh, which holds the float open when the command fails. No command
--- gives a plain shell.
-function M.terminal(f, cwd, runner)
+-- The terminal options for a float that starts in cwd. script is run.sh's
+-- text: the terminal may be on another machine, which has no copy of the file.
+-- A string command runs with sh -c, a list as it is, each through run.sh, which
+-- holds the float open when the command fails. No command gives a plain shell.
+function M.terminal(f, cwd, script)
   local options = { cwd = cwd }
   local argv = f.command
   if type(argv) == "string" then argv = { "sh", "-c", argv } end
   if argv == nil then return options end
 
-  local command = { "bash", runner, f.hold or "error", f.name }
+  local command = { "bash", "-c", script, "floats", f.hold or "error", f.name }
   for _, arg in ipairs(argv) do command[#command + 1] = arg end
   options.command = command
   -- run.sh decides when to hold the float open. Rex would otherwise also hold
@@ -192,6 +192,22 @@ function M.path_of(pwd)
   local path = pwd:match("^file://[^/]*(/.*)$")
   if path == nil then return pwd end
   return (path:gsub("%%(%x%x)", function(h) return string.char(tonumber(h, 16)) end))
+end
+
+-- The directory holding dir. nil at the root.
+function M.parent_of(dir)
+  local parent = dir:gsub("/+$", ""):match("^(.*)/[^/]*$")
+  if parent == nil then return nil end
+  return parent == "" and "/" or parent
+end
+
+-- Whether a terminal's list_dir result has a .git entry: a directory, or a file
+-- in a worktree or a submodule.
+function M.has_git(listing)
+  for _, entry in ipairs(listing.entries or {}) do
+    if entry.name == ".git" then return true end
+  end
+  return false
 end
 
 return M

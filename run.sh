@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 #
-# Runs a float's command. init.lua starts it in the float's terminal, in the
-# directory the float opens in:
+# Runs a float's command. init.lua gives this file's text to bash -c in the
+# float's terminal, in the directory the float opens in, so a remote host needs
+# no copy of it:
 #
-#   run.sh HOLD NAME COMMAND [ARG...]
+#   bash -c "$(cat run.sh)" floats HOLD NAME COMMAND [ARG...]
 #
 # The float closes when this script exits. HOLD keeps it open until a key is
 # pressed, so the command's last output can be read: "error" when the command
